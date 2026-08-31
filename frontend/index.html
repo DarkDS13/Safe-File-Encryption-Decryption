@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Secure File Encryption</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🔒</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar__brand">
+    <span class="topbar__lock" aria-hidden="true">🔒</span>
+    <div>
+      <strong>Secure File Encryption</strong>
+      <span class="topbar__sub">AES-256-GCM · encrypted in your browser</span>
+    </div>
+  </div>
+  <nav class="topbar__nav" id="nav" hidden>
+    <span id="who" class="topbar__who"></span>
+    <a href="/admin" id="admin-link" class="btn btn--ghost" hidden>Admin</a>
+    <button type="button" id="logout" class="btn btn--ghost">Sign out</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Sign in / register                                                  -->
+  <!-- ------------------------------------------------------------------ -->
+  <section id="auth-view" class="auth">
+    <div class="card auth__card">
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab is-active" data-auth-tab="login" role="tab" aria-selected="true">Sign in</button>
+        <button type="button" class="tab" data-auth-tab="register" role="tab" aria-selected="false">Create account</button>
+      </div>
+
+      <div id="auth-banner" class="banner" hidden></div>
+
+      <form id="login-form" class="form" data-auth-panel="login">
+        <label class="field">
+          <span class="field__label">Email</span>
+          <input type="email" name="email" autocomplete="username" required placeholder="you@example.com">
+        </label>
+        <label class="field">
+          <span class="field__label">Password</span>
+          <input type="password" name="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="btn btn--primary btn--block">Sign in</button>
+        <p class="hint">
+          This password protects your <em>account</em>. It is not the passphrase that protects your
+          files — that one never leaves your browser.
+        </p>
+      </form>
+
+      <form id="register-form" class="form" data-auth-panel="register" hidden>
+        <label class="field">
+          <span class="field__label">Email</span>
+          <input type="email" name="email" autocomplete="username" required placeholder="you@example.com">
+        </label>
+        <label class="field">
+          <span class="field__label">Display name <span class="field__optional">(optional)</span></span>
+          <input type="text" name="display_name" autocomplete="nickname" maxlength="120">
+        </label>
+        <label class="field">
+          <span class="field__label">Password</span>
+          <input type="password" name="password" autocomplete="new-password" required minlength="8">
+          <span class="field__help">At least 8 characters, including a letter and a digit.</span>
+        </label>
+        <button type="submit" class="btn btn--primary btn--block">Create account</button>
+      </form>
+    </div>
+
+    <aside class="auth__aside">
+      <h2>How this works</h2>
+      <ol class="steps">
+        <li><strong>Your passphrase stays here.</strong> The key is derived in your browser with Argon2id and is never sent to the server.</li>
+        <li><strong>Files are encrypted before they leave.</strong> AES-256-GCM, in 1 MiB segments, each with its own authentication tag.</li>
+        <li><strong>The server stores sealed containers.</strong> It cannot read them, and neither can an administrator.</li>
+        <li><strong>There is no recovery.</strong> Lose the passphrase and the file is gone for good. That is the design, not an oversight.</li>
+      </ol>
+    </aside>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Application                                                         -->
+  <!-- ------------------------------------------------------------------ -->
+  <section id="app-view" hidden>
+    <div class="tabs tabs--main" role="tablist">
+      <button type="button" class="tab is-active" data-tab="encrypt" role="tab" aria-selected="true">Encrypt</button>
+      <button type="button" class="tab" data-tab="decrypt" role="tab" aria-selected="false">Decrypt</button>
+      <button type="button" class="tab" data-tab="files" role="tab" aria-selected="false">My files</button>
+      <button type="button" class="tab" data-tab="history" role="tab" aria-selected="false">History</button>
+    </div>
+
+    <!-- Encrypt ------------------------------------------------------- -->
+    <div class="panel" data-panel="encrypt">
+      <div class="card">
+        <h2>Encrypt a file</h2>
+        <p class="card__lede">
+          The file is read, checksummed, and encrypted entirely inside this browser tab.
+          Only the sealed container is uploaded.
+        </p>
+
+        <div id="enc-drop" class="dropzone" tabindex="0" role="button"
+             aria-label="Choose a file to encrypt">
+          <input type="file" id="enc-file" accept=".txt,.png,.jpg,.jpeg,.pdf" hidden>
+          <div class="dropzone__icon" aria-hidden="true">📄</div>
+          <div class="dropzone__main">Drop a file here, or click to choose</div>
+          <div class="dropzone__hint" id="enc-hint">TXT, PNG, JPEG or PDF</div>
+        </div>
+        <div id="enc-file-info" class="file-info" hidden></div>
+
+        <div class="field">
+          <span class="field__label">Passphrase</span>
+          <div class="input-row">
+            <input type="password" id="enc-pass" autocomplete="new-password"
+                   placeholder="Something long that you will remember">
+            <button type="button" class="btn btn--ghost" id="enc-reveal" aria-label="Show passphrase">Show</button>
+            <button type="button" class="btn btn--ghost" id="enc-generate">Generate</button>
+          </div>
+          <div class="strength" id="enc-strength" hidden>
+            <div class="strength__bar"><div class="strength__fill"></div></div>
+            <span class="strength__label"></span>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field__label">Confirm passphrase</span>
+          <input type="password" id="enc-pass2" autocomplete="new-password">
+        </div>
+
+        <div id="enc-generated" class="callout callout--warning" hidden>
+          <strong>Copy this passphrase now.</strong>
+          <p>It is shown once and is not stored anywhere. If you lose it, the file cannot be recovered by anyone.</p>
+          <div class="input-row">
+            <code id="enc-generated-value" class="generated"></code>
+            <button type="button" class="btn btn--ghost" id="enc-copy">Copy</button>
+          </div>
+        </div>
+
+        <details class="explain">
+          <summary>What is actually being used, and why</summary>
+          <dl class="explain__list">
+            <dt>AES-256-GCM</dt>
+            <dd>An authenticated cipher. As well as hiding the contents it produces a tag over each
+              segment, so any alteration to the file is detected rather than silently decrypted into
+              rubbish.</dd>
+            <dt>Argon2id</dt>
+            <dd>Turns your passphrase into a 256-bit key. It is deliberately slow and memory-hungry
+              (<span id="explain-mem">64</span> MiB, <span id="explain-iter">3</span> passes) so that guessing
+              passphrases in bulk is expensive.</dd>
+            <dt>1 MiB segments</dt>
+            <dd>The file is encrypted a segment at a time so memory use stays flat whether the file
+              is 10 KB or 50 MB.</dd>
+            <dt>SHA-256</dt>
+            <dd>Recorded before encryption and checked after decryption, proving the file came back
+              byte for byte.</dd>
+          </dl>
+        </details>
+
+        <label class="checkbox">
+          <input type="checkbox" id="enc-upload" checked>
+          <span>Upload the encrypted container to my account</span>
+        </label>
+
+        <div id="enc-banner" class="banner" hidden></div>
+
+        <div class="progress" id="enc-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" hidden>
+          <div class="progress__fill"></div>
+          <span class="progress__label"></span>
+        </div>
+        <div id="enc-stage" class="stage" hidden></div>
+
+        <button type="button" id="enc-run" class="btn btn--primary btn--block">Encrypt file</button>
+
+        <div id="enc-result" class="result" hidden></div>
+      </div>
+    </div>
+
+    <!-- Decrypt ------------------------------------------------------- -->
+    <div class="panel" data-panel="decrypt" hidden>
+      <div class="card">
+        <h2>Decrypt a container</h2>
+        <p class="card__lede">
+          Choose a <code>.enc</code> container and give the passphrase it was created with.
+          Every segment's tag is checked before any of it is written out.
+        </p>
+
+        <div id="dec-drop" class="dropzone" tabindex="0" role="button"
+             aria-label="Choose a container to decrypt">
+          <input type="file" id="dec-file" accept=".enc" hidden>
+          <div class="dropzone__icon" aria-hidden="true">🔐</div>
+          <div class="dropzone__main">Drop a .enc container here, or click to choose</div>
+          <div class="dropzone__hint">You can also decrypt straight from the “My files” tab</div>
+        </div>
+        <div id="dec-file-info" class="file-info" hidden></div>
+
+        <div class="field">
+          <span class="field__label">Passphrase</span>
+          <div class="input-row">
+            <input type="password" id="dec-pass" autocomplete="current-password">
+            <button type="button" class="btn btn--ghost" id="dec-reveal" aria-label="Show passphrase">Show</button>
+          </div>
+        </div>
+
+        <div id="dec-banner" class="banner" hidden></div>
+
+        <div class="progress" id="dec-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" hidden>
+          <div class="progress__fill"></div>
+          <span class="progress__label"></span>
+        </div>
+        <div id="dec-stage" class="stage" hidden></div>
+
+        <button type="button" id="dec-run" class="btn btn--primary btn--block">Decrypt file</button>
+
+        <div id="dec-result" class="result" hidden></div>
+      </div>
+    </div>
+
+    <!-- My files ------------------------------------------------------ -->
+    <div class="panel" data-panel="files" hidden>
+      <div class="card">
+        <div class="card__head">
+          <h2>My files</h2>
+          <button type="button" class="btn btn--ghost" id="files-refresh">Refresh</button>
+        </div>
+        <p class="card__lede">
+          Containers stored against your account. They are removed automatically after the
+          retention period (<span id="retention-days">7</span> days).
+        </p>
+        <div id="files-banner" class="banner" hidden></div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>File</th><th>Size</th><th>Algorithm</th>
+                <th>Created</th><th>Expires</th><th class="right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="files-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- History ------------------------------------------------------- -->
+    <div class="panel" data-panel="history" hidden>
+      <div class="card">
+        <div class="card__head">
+          <h2>Operation history</h2>
+          <button type="button" class="btn btn--ghost" id="history-refresh">Refresh</button>
+        </div>
+        <div class="stats" id="history-stats"></div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>When</th><th>Operation</th><th>File</th><th>Size</th>
+                <th>Time</th><th>Throughput</th><th>Peak memory</th><th>Result</th>
+              </tr>
+            </thead>
+            <tbody id="history-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="decrypt-modal" class="modal" hidden>
+  <div class="modal__box" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <h3 id="modal-title">Decrypt stored file</h3>
+    <p id="modal-file" class="modal__file"></p>
+    <label class="field">
+      <span class="field__label">Passphrase</span>
+      <input type="password" id="modal-pass" autocomplete="current-password">
+    </label>
+    <div id="modal-banner" class="banner" hidden></div>
+    <div class="progress" id="modal-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" hidden>
+      <div class="progress__fill"></div>
+      <span class="progress__label"></span>
+    </div>
+    <div class="modal__actions">
+      <button type="button" class="btn btn--ghost" id="modal-cancel">Cancel</button>
+      <button type="button" class="btn btn--primary" id="modal-ok">Decrypt and download</button>
+    </div>
+  </div>
+</div>
+
+<footer class="footer">
+  <span>Files are encrypted in your browser. The server never receives a key or a passphrase.</span>
+</footer>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Administration — Secure File Encryption</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🛡️</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar__brand">
+    <span class="topbar__lock" aria-hidden="true">🛡️</span>
+    <div>
+      <strong>Administration</strong>
+      <span class="topbar__sub">Accounts, audit log and system statistics</span>
+    </div>
+  </div>
+  <nav class="topbar__nav">
+    <span id="who" class="topbar__who"></span>
+    <a href="/" class="btn btn--ghost">Back to app</a>
+    <button type="button" id="logout" class="btn btn--ghost">Sign out</button>
+  </nav>
+</header>
+
+<main>
+  <div id="denied" class="card card--centred" hidden>
+    <h2>Administrator access required</h2>
+    <p>This page is only available to administrator accounts. The check is enforced on the server,
+      not just here.</p>
+    <a href="/" class="btn btn--primary">Back to the application</a>
+  </div>
+
+  <section id="admin-view" hidden>
+    <div class="stats stats--wide" id="stat-cards"></div>
+
+    <div class="tabs tabs--main" role="tablist">
+      <button type="button" class="tab is-active" data-tab="users" role="tab" aria-selected="true">Accounts</button>
+      <button type="button" class="tab" data-tab="audit" role="tab" aria-selected="false">Audit log</button>
+      <button type="button" class="tab" data-tab="containers" role="tab" aria-selected="false">Stored files</button>
+      <button type="button" class="tab" data-tab="maintenance" role="tab" aria-selected="false">Maintenance</button>
+    </div>
+
+    <div id="admin-banner" class="banner" hidden></div>
+
+    <div class="panel" data-panel="users">
+      <div class="card">
+        <div class="card__head">
+          <h2>Accounts</h2>
+          <div class="input-row">
+            <input type="search" id="user-search" placeholder="Filter by email" aria-label="Filter accounts by email">
+            <button type="button" class="btn btn--ghost" id="users-refresh">Refresh</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th><th>Registered</th><th>Last sign-in</th><th class="right">Actions</th></tr>
+            </thead>
+            <tbody id="users-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" data-panel="audit" hidden>
+      <div class="card">
+        <div class="card__head">
+          <h2>Audit log</h2>
+          <div class="input-row">
+            <select id="audit-outcome" aria-label="Filter by outcome">
+              <option value="">All outcomes</option>
+              <option value="success">Successes</option>
+              <option value="failure">Failures</option>
+            </select>
+            <button type="button" class="btn btn--ghost" id="audit-refresh">Refresh</button>
+          </div>
+        </div>
+        <p class="card__lede">
+          Every operation is recorded with its parameters and outcome. No entry ever contains a key,
+          a passphrase, or any plaintext.
+        </p>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>When</th><th>Actor</th><th>Action</th><th>Outcome</th><th>Detail</th><th>Address</th></tr>
+            </thead>
+            <tbody id="audit-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" data-panel="containers" hidden>
+      <div class="card">
+        <div class="card__head">
+          <h2>Stored files</h2>
+          <button type="button" class="btn btn--ghost" id="containers-refresh">Refresh</button>
+        </div>
+        <p class="card__lede">
+          Metadata only. There is no administrative path to the contents of these files — the server
+          holds no key that could open them.
+        </p>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>File</th><th>Owner</th><th>Size</th><th>Algorithm</th><th>Created</th><th>Expires</th></tr>
+            </thead>
+            <tbody id="containers-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" data-panel="maintenance" hidden>
+      <div class="card">
+        <h2>Maintenance</h2>
+        <p class="card__lede">Remove containers whose retention period has passed.</p>
+        <div id="purge-result" class="callout" hidden></div>
+        <button type="button" class="btn btn--danger" id="purge-run">Purge expired containers</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <span>Administrators manage accounts and read the log. They cannot decrypt another user's files.</span>
+</footer>
+
+<script type="module" src="/js/admin.js"></script>
+</body>
+</html>
