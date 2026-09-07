@@ -1,0 +1,21 @@
+# Local production-mode run:  docker compose up --build
+#
+# This mirrors what a hosting platform does, except that it serves plain HTTP on
+# localhost.  That works because localhost counts as a secure context; any other
+# hostname needs real TLS in front.
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      SFE_ENV: production
+      SFE_SECRET_KEY: ${SFE_SECRET_KEY:?set SFE_SECRET_KEY, e.g. `export SFE_SECRET_KEY=$(python3 -c "import secrets;print(secrets.token_urlsafe(48))")`}
+      SFE_ADMIN_EMAIL: ${SFE_ADMIN_EMAIL:-admin@example.com}
+      SFE_ADMIN_PASSWORD: ${SFE_ADMIN_PASSWORD:?set SFE_ADMIN_PASSWORD}
+    volumes:
+      - sfe-data:/data
+    restart: unless-stopped
+
+volumes:
+  sfe-data:

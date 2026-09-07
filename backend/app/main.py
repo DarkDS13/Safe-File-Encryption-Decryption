@@ -19,7 +19,7 @@ from sqlalchemy import select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import audit
-from .config import BASE_DIR, settings
+from .config import BASE_DIR, ConfigurationError, check_production_readiness, settings
 from .database import SessionLocal, init_db
 from .models import Role, User
 from .routers import admin, auth, containers, operations
@@ -37,6 +37,11 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
+    # The interactive docs describe every endpoint and schema.  Useful while
+    # developing, an unnecessary disclosure once deployed.
+    docs_url="/docs" if settings.ENABLE_DOCS else None,
+    redoc_url="/redoc" if settings.ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if settings.ENABLE_DOCS else None,
     description=(
         "Zero-knowledge file encryption. Files are encrypted and decrypted in "
         "the browser with AES-256-GCM under an Argon2id-derived key; this "
@@ -77,6 +82,17 @@ def seed_admin() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    problems = check_production_readiness(settings)
+    if problems:
+        if settings.IS_PRODUCTION:
+            # Refusing to start is the safe failure.  A service that boots with
+            # a known default password is worse than one that does not boot.
+            raise ConfigurationError(
+                "Refusing to start in production:\n  - " + "\n  - ".join(problems)
+            )
+        for problem in problems:
+            logger.warning("development default in use: %s", problem)
+
     init_db()
     seed_admin()
     logger.info("%s %s ready", settings.APP_NAME, settings.APP_VERSION)
@@ -98,6 +114,13 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
+    if settings.IS_PRODUCTION:
+        # The SRS makes transport encryption mandatory: a passphrase crossing an
+        # unencrypted connection would defeat the whole system.  HSTS tells the
+        # browser never to try plain HTTP for this origin again.
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
     # 'wasm-unsafe-eval' is here because the key-derivation worker instantiates
     # a WebAssembly module; nothing else in the client needs it.
     response.headers["Content-Security-Policy"] = (

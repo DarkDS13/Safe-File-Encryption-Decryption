@@ -21,24 +21,14 @@ import {
   segmentNonce,
 } from '../js/container.js';
 import { decryptFile, encryptFile, validateFile } from '../js/filecrypto.js';
-import { createInlineEngine } from './inline-engine.mjs';
+import { CONFIG, createInlineEngine } from './inline-engine.mjs';
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
 const fill = (n, v) => new Uint8Array(n).fill(v);
 const hex = (b) => Buffer.from(b).toString('hex');
 
-// Test-scale KDF parameters.  The RFC vectors below pin the algorithm itself;
-// the round-trip tests only need a key, not an expensive one.
-const CONFIG = {
-  max_upload_bytes: 50 * 1024 * 1024,
-  segment_size: 64 * 1024,
-  allowed_extensions: ['txt', 'png', 'jpg', 'jpeg', 'pdf'],
-  allowed_mime_types: ['text/plain', 'image/png', 'image/jpeg', 'application/pdf'],
-  argon2_memory_kib: 64,
-  argon2_iterations: 1,
-  argon2_parallelism: 1,
-};
+
 
 // ===========================================================================
 describe('SHA-256', () => {

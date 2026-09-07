@@ -1,0 +1,33 @@
+# Render blueprint.
+#
+# Render terminates TLS and gives every service an https://*.onrender.com
+# hostname, which is what makes the browser's Web Crypto API available — the
+# application refuses to run over plain HTTP.
+services:
+  - type: web
+    name: secure-file-encryption
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: SFE_ENV
+        value: production
+      # Generated once by Render and kept across deploys.  Without a stable key
+      # every restart would invalidate all sessions.
+      - key: SFE_SECRET_KEY
+        generateValue: true
+      - key: SFE_ADMIN_EMAIL
+        sync: false      # prompted for on first deploy
+      - key: SFE_ADMIN_PASSWORD
+        sync: false      # prompted for on first deploy
+      - key: SFE_RETENTION_DAYS
+        value: "7"
+    # A disk keeps the database and stored containers across restarts.  Render's
+    # free plan does not include one, so on `plan: free` uploads and accounts
+    # are lost whenever the service restarts or wakes from sleep.  Uncomment
+    # this block (and move off the free plan) to make storage durable.
+    # disk:
+    #   name: sfe-data
+    #   mountPath: /data
+    #   sizeGB: 1

@@ -1,0 +1,46 @@
+# Fly.io configuration.
+#
+# Fly is the better fit if you want uploads to survive a restart: its free
+# allowance includes a persistent volume, which Render's free plan does not.
+app = "secure-file-encryption"
+primary_region = "bom"          # Mumbai; change to your nearest region
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  SFE_ENV = "production"
+  SFE_DATA_DIR = "/data"
+  SFE_RETENTION_DAYS = "7"
+
+# Persistent storage for the database and the encrypted containers.
+# Create it once with:  fly volumes create sfe_data --size 1
+[mounts]
+  source = "sfe_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8000
+  # TLS is mandatory: the client cannot function over plain HTTP.
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    # The rate limiter and SQLite connection pool live in one process, so this
+    # deployment runs a single machine rather than several.
+    hard_limit = 200
+    soft_limit = 150
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/api/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

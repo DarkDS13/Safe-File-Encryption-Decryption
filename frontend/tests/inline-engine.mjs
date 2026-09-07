@@ -9,6 +9,23 @@
 import { webcrypto } from 'node:crypto';
 import { argon2id } from '../js/argon2.js';
 
+/**
+ * Test-scale client configuration.
+ *
+ * The KDF cost is deliberately tiny: the RFC vectors pin the algorithm itself,
+ * so the round-trip and performance suites only need *a* key, not an expensive
+ * one.  Shared by every frontend suite so they cannot drift apart.
+ */
+export const CONFIG = {
+  max_upload_bytes: 50 * 1024 * 1024,
+  segment_size: 64 * 1024,
+  allowed_extensions: ['txt', 'png', 'jpg', 'jpeg', 'pdf'],
+  allowed_mime_types: ['text/plain', 'image/png', 'image/jpeg', 'application/pdf'],
+  argon2_memory_kib: 64,
+  argon2_iterations: 1,
+  argon2_parallelism: 1,
+};
+
 export function createInlineEngine(concurrency = 4) {
   const keys = new Map();
 

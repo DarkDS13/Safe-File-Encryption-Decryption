@@ -1,0 +1,46 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r backend/requirements.txt
+      - run: python -m pytest backend/tests -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node --test "frontend/tests/*.test.mjs"
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t sfe:ci .
+      - name: Boot it and check health
+        run: |
+          docker run -d --name sfe -p 8000:8000 \
+            -e SFE_ENV=production \
+            -e SFE_SECRET_KEY="$(python3 -c 'import secrets;print(secrets.token_urlsafe(48))')" \
+            -e SFE_ADMIN_PASSWORD="CiAdminPass123" \
+            sfe:ci
+          for i in $(seq 1 20); do
+            curl -fs http://127.0.0.1:8000/api/health && exit 0
+            sleep 2
+          done
+          echo "service never became healthy"; docker logs sfe; exit 1

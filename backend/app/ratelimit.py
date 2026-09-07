@@ -47,10 +47,24 @@ login_limiter = RateLimiter(settings.LOGIN_RATE_LIMIT, settings.RATE_LIMIT_WINDO
 
 
 def identity(request: Request) -> str:
-    """Prefer the bearer token so a limit follows the account, not the network."""
-    auth = request.headers.get("authorization", "")
-    if auth.lower().startswith("bearer "):
-        return "tok:" + auth[7:][:64]
+    """Key a limit to the account where one is known, to the network otherwise.
+
+    `current_user` resolves as a dependency, so by the time a handler body calls
+    `enforce` the authenticated user is already on `request.state`.  Keying on
+    the account id rather than on the token string matters: tokens change every
+    time a user signs in, so a token-keyed bucket would reset on re-login and
+    the limit could be walked around.
+    """
+    user = getattr(request.state, "user", None)
+    if user is not None:
+        return "user:" + user.id
+
+    # Unauthenticated, or an endpoint that limits before authenticating (login
+    # and register).  Fall back to the caller's address, honouring the proxy
+    # header so every client behind one proxy does not share a single bucket.
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return "ip:" + forwarded.split(",")[0].strip()[:64]
     return "ip:" + (request.client.host if request.client else "unknown")
 
 

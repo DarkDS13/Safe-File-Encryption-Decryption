@@ -277,3 +277,25 @@ encrypted under either setting stay decryptable.
 A production deployment would replace `argon2.js` with a compiled WebAssembly
 Argon2, which closes most of the gap. The module boundary is already in the
 right place for that: only `crypto-worker.js` calls into it.
+
+
+## Deployment
+
+The application is packaged as a single Docker image serving both the API and
+the browser client.
+
+```bash
+docker build -t sfe .
+docker run -d -p 8000:8000 -e SFE_ENV=production \
+  -e SFE_SECRET_KEY="$(python3 -c 'import secrets;print(secrets.token_urlsafe(48))')" \
+  -e SFE_ADMIN_PASSWORD='a-real-password' -v sfe-data:/data sfe
+```
+
+Blueprints are included for [Render](render.yaml) and [Fly.io](fly.toml).
+
+**HTTPS is mandatory.** The browser only exposes the Web Crypto API in a secure
+context, so the client refuses to run over plain HTTP to anything but
+`localhost`. Every hosting option in the guide terminates TLS for you.
+
+Full instructions, configuration reference, and post-deploy checks:
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).

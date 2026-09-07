@@ -107,3 +107,122 @@ def test_suspended_account_token_stops_working(client, admin, user):
 def test_bootstrap_admin_exists_and_has_admin_role(client, admin):
     assert admin["user"]["role"] == "admin"
     assert admin["user"]["email"] == settings.ADMIN_EMAIL
+
+
+def test_a_very_long_password_is_accepted_and_verifies(client):
+    """bcrypt caps at 72 bytes; a long passphrase must not crash or truncate."""
+    long_password = "correct-horse-battery-staple-" * 5 + "9"   # 146 characters
+    created = client.post(
+        "/api/auth/register", json={"email": "long@example.com", "password": long_password}
+    )
+    assert created.status_code == 201
+
+    ok = client.post(
+        "/api/auth/login", json={"email": "long@example.com", "password": long_password}
+    )
+    assert ok.status_code == 200
+
+
+def test_long_passwords_are_not_truncated_to_72_bytes(client):
+    """Two passwords sharing their first 72 bytes must not be interchangeable."""
+    base = "x" * 80
+    client.post("/api/auth/register", json={"email": "t@example.com", "password": base + "aaa1"})
+    wrong = client.post(
+        "/api/auth/login", json={"email": "t@example.com", "password": base + "bbb1"}
+    )
+    assert wrong.status_code == 401
+
+
+# --------------------------------------------------------------------------
+# token handling (F.12)
+# --------------------------------------------------------------------------
+def test_token_carries_subject_role_and_expiry(client, user):
+    from app.security import decode_token
+
+    claims = decode_token(user["token"])
+    assert claims["sub"] == user["user"]["id"]
+    assert claims["role"] == "user"
+    assert claims["exp"] > claims["iat"]
+    # Nothing password-shaped is ever put in a token; the payload is only
+    # base64, so anything in it is readable by the holder.
+    assert "password" not in claims
+    assert "passphrase" not in claims
+
+
+def test_an_expired_token_is_refused(client, user):
+    import time
+
+    import jwt
+
+    from app.config import settings
+
+    expired = jwt.encode(
+        {"sub": user["user"]["id"], "role": "user", "exp": int(time.time()) - 60},
+        settings.SECRET_KEY,
+        algorithm=settings.JWT_ALGORITHM,
+    )
+    response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {expired}"})
+    assert response.status_code == 401
+
+
+def test_a_token_signed_with_the_wrong_key_is_refused(client, user):
+    import time
+
+    import jwt
+
+    forged = jwt.encode(
+        {"sub": user["user"]["id"], "role": "admin", "exp": int(time.time()) + 600},
+        "not-the-server-secret",
+        algorithm="HS256",
+    )
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {forged}"}).status_code == 401
+
+
+def test_editing_the_role_claim_does_not_grant_admin(client, user):
+    """The payload is readable but not modifiable: editing it breaks the signature."""
+    import base64
+    import json
+
+    header, payload, signature = user["token"].split(".")
+    body = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    body["role"] = "admin"
+    tampered = base64.urlsafe_b64encode(json.dumps(body).encode()).decode().rstrip("=")
+
+    response = client.get(
+        "/api/admin/stats", headers={"Authorization": f"Bearer {header}.{tampered}.{signature}"}
+    )
+    assert response.status_code == 401
+
+
+def test_an_alg_none_token_is_refused(client, user):
+    """The classic JWT downgrade: PyJWT must not accept an unsigned token."""
+    import base64
+    import json
+
+    header = base64.urlsafe_b64encode(b'{"alg":"none","typ":"JWT"}').decode().rstrip("=")
+    body = base64.urlsafe_b64encode(
+        json.dumps({"sub": user["user"]["id"], "role": "admin"}).encode()
+    ).decode().rstrip("=")
+
+    response = client.get(
+        "/api/admin/stats", headers={"Authorization": f"Bearer {header}.{body}."}
+    )
+    assert response.status_code == 401
+
+
+def test_a_token_for_a_deleted_account_is_refused(client, user):
+    """The role is re-read from the database, so a stale token cannot be used."""
+    from app.database import SessionLocal
+    from app.models import User
+
+    with SessionLocal() as db:
+        db.delete(db.get(User, user["user"]["id"]))
+        db.commit()
+
+    assert client.get("/api/auth/me", headers=user["headers"]).status_code == 401
+
+
+def test_a_malformed_authorization_header_is_refused(client):
+    for header in ["", "Bearer", "Bearer ", "Basic abc123", "Bearer not.a.jwt"]:
+        response = client.get("/api/auth/me", headers={"Authorization": header})
+        assert response.status_code == 401, f"{header!r} was not refused"

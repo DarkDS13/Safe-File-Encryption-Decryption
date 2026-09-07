@@ -5,6 +5,8 @@ used to encrypt files.  The passphrase never reaches this process.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -26,14 +28,23 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # --------------------------------------------------------------------------
 # passwords
 # --------------------------------------------------------------------------
+# bcrypt only reads the first 72 bytes of a password and refuses anything
+# longer.  Pre-hashing with SHA-256 gives a fixed-length input, so a long
+# passphrase keeps all of its entropy instead of being truncated or rejected.
+# The digest is base64-encoded because bcrypt stops at the first NUL byte.
+def _prepare(password: str) -> bytes:
+    digest = hashlib.sha256(password.encode("utf-8")).digest()
+    return base64.b64encode(digest)
+
+
 def hash_password(password: str) -> str:
     salt = bcrypt.gensalt(rounds=settings.BCRYPT_ROUNDS)
-    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
+    return bcrypt.hashpw(_prepare(password), salt).decode("utf-8")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
     try:
-        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+        return bcrypt.checkpw(_prepare(password), password_hash.encode("utf-8"))
     except ValueError:
         # Malformed stored hash: treat as a failed check rather than a crash.
         return False

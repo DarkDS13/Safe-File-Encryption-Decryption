@@ -24,6 +24,14 @@ class Settings:
     APP_NAME = "Secure File Encryption and Decryption System"
     APP_VERSION = "1.0.0"
 
+    # "development" or "production".  Production turns on a set of checks that
+    # refuse to start with development defaults still in place.
+    ENV = os.environ.get("SFE_ENV", "development").strip().lower()
+    IS_PRODUCTION = ENV == "production"
+    # The interactive API docs are useful while developing and are an
+    # unnecessary disclosure of the API surface in production.
+    ENABLE_DOCS = os.environ.get("SFE_ENABLE_DOCS", "0" if IS_PRODUCTION else "1") == "1"
+
     # --- storage --------------------------------------------------------
     DATA_DIR = Path(os.environ.get("SFE_DATA_DIR", BASE_DIR / "data"))
     STORAGE_DIR = DATA_DIR / "containers"
@@ -32,7 +40,8 @@ class Settings:
     # --- auth -----------------------------------------------------------
     # A generated secret means tokens do not survive a restart, which is safe
     # by default.  Set SFE_SECRET_KEY in deployment to keep sessions alive.
-    SECRET_KEY = os.environ.get("SFE_SECRET_KEY", secrets.token_urlsafe(48))
+    SECRET_KEY_PROVIDED = bool(os.environ.get("SFE_SECRET_KEY"))
+    SECRET_KEY = os.environ.get("SFE_SECRET_KEY") or secrets.token_urlsafe(48)
     JWT_ALGORITHM = "HS256"
     TOKEN_TTL_MINUTES = _int("SFE_TOKEN_TTL_MINUTES", 720)
     BCRYPT_ROUNDS = _int("SFE_BCRYPT_ROUNDS", 12)
@@ -67,12 +76,36 @@ class Settings:
     LOGIN_RATE_LIMIT = _int("SFE_LOGIN_RATE_LIMIT", 10)
 
     # --- bootstrap administrator ----------------------------------------
+    DEFAULT_ADMIN_PASSWORD = "Admin@12345"
     ADMIN_EMAIL = os.environ.get("SFE_ADMIN_EMAIL", "admin@example.com")
-    ADMIN_PASSWORD = os.environ.get("SFE_ADMIN_PASSWORD", "Admin@12345")
+    ADMIN_PASSWORD = os.environ.get("SFE_ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD)
 
     CORS_ORIGINS = [
         o for o in os.environ.get("SFE_CORS_ORIGINS", "").split(",") if o
     ]
+
+
+class ConfigurationError(RuntimeError):
+    """Raised when a production deployment still carries development defaults."""
+
+
+def check_production_readiness(config: "Settings") -> list[str]:
+    """Return the reasons this configuration must not be exposed publicly."""
+    problems: list[str] = []
+    if not config.SECRET_KEY_PROVIDED:
+        problems.append(
+            "SFE_SECRET_KEY is not set. Tokens would be signed with a key that "
+            "changes on every restart, signing every user out. Generate one with: "
+            "python -c 'import secrets; print(secrets.token_urlsafe(48))'"
+        )
+    elif len(config.SECRET_KEY) < 32:
+        problems.append("SFE_SECRET_KEY is shorter than 32 characters.")
+    if config.ADMIN_PASSWORD == config.DEFAULT_ADMIN_PASSWORD:
+        problems.append(
+            "SFE_ADMIN_PASSWORD is still the documented default. Set a real one "
+            "before the service is reachable."
+        )
+    return problems
 
 
 settings = Settings()

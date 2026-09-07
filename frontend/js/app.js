@@ -27,7 +27,36 @@ let busy = false;
 // ---------------------------------------------------------------------------
 // startup
 // ---------------------------------------------------------------------------
+/**
+ * The Web Crypto API is only exposed in a secure context: HTTPS, or localhost.
+ * Served over plain HTTP to anything else, `crypto.subtle` is undefined and
+ * every operation in this application fails.  Detect that up front and say so
+ * plainly, rather than letting it surface as an unreadable TypeError halfway
+ * through an encryption (NF.8).
+ */
+function secureContextProblem() {
+  if (window.isSecureContext && window.crypto?.subtle) return null;
+  return (
+    'This page is not running in a secure context, so the browser will not '
+    + 'provide the cryptography it needs. Open it over HTTPS (or via '
+    + 'http://localhost during development). Nothing can be encrypted or '
+    + 'decrypted until then.'
+  );
+}
+
 async function start() {
+  const insecure = secureContextProblem();
+  if (insecure) {
+    document.body.prepend(
+      el('div', { class: 'banner banner--error', text: insecure }),
+    );
+    // Leave the page readable but refuse to offer actions that cannot work.
+    document.querySelectorAll('button, input, select').forEach((node) => {
+      node.disabled = true;
+    });
+    return;
+  }
+
   try {
     config = await api.config();
   } catch {
