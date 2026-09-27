@@ -172,7 +172,7 @@ def test_a_token_signed_with_the_wrong_key_is_refused(client, user):
 
     forged = jwt.encode(
         {"sub": user["user"]["id"], "role": "admin", "exp": int(time.time()) + 600},
-        "not-the-server-secret",
+        "not-the-server-secret-but-long-enough-for-hs256",
         algorithm="HS256",
     )
     assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {forged}"}).status_code == 401
@@ -226,3 +226,112 @@ def test_a_malformed_authorization_header_is_refused(client):
     for header in ["", "Bearer", "Bearer ", "Basic abc123", "Bearer not.a.jwt"]:
         response = client.get("/api/auth/me", headers={"Authorization": header})
         assert response.status_code == 401, f"{header!r} was not refused"
+
+
+# --------------------------------------------------------------------------
+# password hash migration
+# --------------------------------------------------------------------------
+def test_a_password_hashed_under_the_old_scheme_still_works(client):
+    """Accounts created before the SHA-256 pre-hash must keep working.
+
+    The pre-hash was introduced to fix bcrypt's 72-byte limit.  Without a
+    fallback it would have locked out every account that already existed.
+    """
+    import bcrypt
+
+    from app.database import SessionLocal
+    from app.models import Role, User
+
+    legacy_password = "Legacy12345"
+    # Exactly how the hash would have been written before the change: bcrypt
+    # over the raw password, with no pre-hash.
+    legacy_hash = bcrypt.hashpw(legacy_password.encode(), bcrypt.gensalt(rounds=4)).decode()
+
+    with SessionLocal() as db:
+        db.add(
+            User(
+                email="legacy@example.com",
+                display_name="Legacy",
+                password_hash=legacy_hash,
+                role=Role.USER,
+            )
+        )
+        db.commit()
+
+    response = client.post(
+        "/api/auth/login", json={"email": "legacy@example.com", "password": legacy_password}
+    )
+    assert response.status_code == 200, "an account from before the change could not sign in"
+
+
+def test_a_legacy_hash_is_upgraded_on_the_next_sign_in(client):
+    """The old format drains away without anyone resetting a password."""
+    import bcrypt
+
+    from app.database import SessionLocal
+    from app.models import Role, User
+    from app.security import needs_rehash
+
+    password = "Upgrade12345"
+    legacy_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=4)).decode()
+
+    with SessionLocal() as db:
+        db.add(
+            User(
+                email="upgrade@example.com",
+                display_name="Upgrade",
+                password_hash=legacy_hash,
+                role=Role.USER,
+            )
+        )
+        db.commit()
+
+    assert client.post(
+        "/api/auth/login", json={"email": "upgrade@example.com", "password": password}
+    ).status_code == 200
+
+    with SessionLocal() as db:
+        stored = db.scalar(
+            __import__("sqlalchemy").select(User).where(User.email == "upgrade@example.com")
+        ).password_hash
+
+    assert stored != legacy_hash, "the stored hash was not upgraded"
+    assert not needs_rehash(password, stored), "the upgraded hash is still legacy"
+    # and the account still signs in with the upgraded hash
+    assert client.post(
+        "/api/auth/login", json={"email": "upgrade@example.com", "password": password}
+    ).status_code == 200
+
+
+def test_a_wrong_password_is_still_refused_against_a_legacy_hash(client):
+    """The fallback must not become a way in."""
+    import bcrypt
+
+    from app.database import SessionLocal
+    from app.models import Role, User
+
+    with SessionLocal() as db:
+        db.add(
+            User(
+                email="legacy2@example.com",
+                display_name="Legacy2",
+                password_hash=bcrypt.hashpw(b"Correct12345", bcrypt.gensalt(rounds=4)).decode(),
+                role=Role.USER,
+            )
+        )
+        db.commit()
+
+    assert client.post(
+        "/api/auth/login", json={"email": "legacy2@example.com", "password": "Wrong12345"}
+    ).status_code == 401
+
+
+def test_a_failed_login_says_the_credentials_are_wrong(client, user):
+    """Not "your session has expired" — that sends people after the wrong problem."""
+    response = client.post(
+        "/api/auth/login", json={"email": "alice@example.com", "password": "Wrong12345"}
+    )
+    assert response.status_code == 401
+    message = response.json()["error"]["message"]
+    assert "incorrect" in message.lower()
+    assert "expired" not in message.lower()

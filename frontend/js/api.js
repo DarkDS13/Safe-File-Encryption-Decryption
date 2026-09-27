@@ -59,6 +59,9 @@ export const session = {
   },
 };
 
+/** Endpoints where a 401 is a rejected credential, not a dead session. */
+const AUTH_ENDPOINTS = new Set(['/api/auth/login', '/api/auth/register']);
+
 async function request(path, { method = 'GET', body, headers = {}, raw = false } = {}) {
   const options = { method, headers: { ...headers } };
 
@@ -83,11 +86,6 @@ async function request(path, { method = 'GET', body, headers = {}, raw = false }
     );
   }
 
-  if (response.status === 401) {
-    session.clear();
-    throw new ApiError('Your session has expired. Please sign in again.', 401, null);
-  }
-
   if (!response.ok) {
     let message = `The server returned an error (${response.status}).`;
     let payload = null;
@@ -98,6 +96,17 @@ async function request(path, { method = 'GET', body, headers = {}, raw = false }
     } catch {
       /* a non-JSON error body: keep the generic message */
     }
+
+    // A 401 on a sign-in attempt means the credentials were wrong, and the
+    // server has already said so in plain language.  A 401 anywhere else means
+    // the session behind the current token is no longer good, so drop it.
+    // Treating both the same way used to report a wrong password as an expired
+    // session, which sent people looking for the wrong problem.
+    if (response.status === 401 && !AUTH_ENDPOINTS.has(path)) {
+      session.clear();
+      message = 'Your session has expired. Please sign in again.';
+    }
+
     throw new ApiError(message, response.status, payload);
   }
 

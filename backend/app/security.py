@@ -42,12 +42,45 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(_prepare(password), salt).decode("utf-8")
 
 
-def verify_password(password: str, password_hash: str) -> bool:
+def _verify_legacy(password: str, password_hash: str) -> bool:
+    """Check a hash written before the SHA-256 pre-hash was introduced.
+
+    Those hashes were made from the raw password.  Without this fallback,
+    introducing the pre-hash would have locked out every existing account.
+    """
     try:
-        return bcrypt.checkpw(_prepare(password), password_hash.encode("utf-8"))
+        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    except ValueError:
+        # Raw passwords over 72 bytes were rejected by bcrypt, so no legacy
+        # hash can exist for one.
+        return False
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """True if the password matches, under either the current or legacy scheme."""
+    encoded_hash = password_hash.encode("utf-8")
+    try:
+        if bcrypt.checkpw(_prepare(password), encoded_hash):
+            return True
     except ValueError:
         # Malformed stored hash: treat as a failed check rather than a crash.
         return False
+    return _verify_legacy(password, password_hash)
+
+
+def needs_rehash(password: str, password_hash: str) -> bool:
+    """True when a verified password is still stored under the legacy scheme.
+
+    Callers upgrade the stored hash on the next successful sign-in, so the old
+    format drains away without anyone being asked to reset a password.
+    """
+    encoded_hash = password_hash.encode("utf-8")
+    try:
+        if bcrypt.checkpw(_prepare(password), encoded_hash):
+            return False
+    except ValueError:
+        return False
+    return _verify_legacy(password, password_hash)
 
 
 def password_problem(password: str) -> str | None:

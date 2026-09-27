@@ -1,6 +1,8 @@
 """0.1 Authentication & Session Management (F.12)."""
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -15,9 +17,12 @@ from ..security import (
     create_access_token,
     current_user,
     hash_password,
+    needs_rehash,
     password_problem,
     verify_password,
 )
+
+logger = logging.getLogger("sfe.auth")
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -108,6 +113,12 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This account has been suspended. Contact an administrator.",
         )
+
+    # Upgrade a hash still stored under the pre-2.0 scheme, now that the
+    # password has been proven correct.  Silent, and happens once per account.
+    if needs_rehash(payload.password, user.password_hash):
+        user.password_hash = hash_password(payload.password)
+        logger.info("upgraded stored password hash for %s", user.email)
 
     user.last_login_at = utcnow()
     db.commit()

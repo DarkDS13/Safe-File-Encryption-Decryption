@@ -110,7 +110,7 @@ def upload_container(
             request=request,
         )
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=f"That file is larger than the {exc.limit // (1024 * 1024)} MB limit.",
         ) from None
     except OSError:

@@ -2,8 +2,12 @@
 #
 # Fly is the better fit if you want uploads to survive a restart: its free
 # allowance includes a persistent volume, which Render's free plan does not.
-app = "secure-file-encryption"
-primary_region = "bom"          # Mumbai; change to your nearest region
+# App names are global across all of Fly, so this must be unique.  Change it
+# if `fly launch` reports the name is taken.
+app = "sfe-241it024"
+# Mumbai (bom) is no longer offered; Singapore is the closest region to India.
+# `fly platform regions` lists what is currently available.
+primary_region = "sin"
 
 [build]
   dockerfile = "Dockerfile"
